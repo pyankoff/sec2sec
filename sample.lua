@@ -11,10 +11,10 @@ cmd:text('Test a simple character-level LSTM language model')
 cmd:text()
 cmd:text('Options')
 cmd:option('-vocabfile','vocabfile.t7','filename of the string->int table')
-cmd:option('-model','model_file.t7','contains just the protos table, and nothing else')
+cmd:option('-model','model_autosave.t7','contains just the protos table, and nothing else')
 cmd:option('-seed',123,'random number generator\'s seed')
 cmd:option('-sample',false,'false to use max at each timestep, true to sample at each timestep')
-cmd:option('-primetext',"hello my name is ",'used as a prompt to "seed" the state of the LSTM using a given sequence, before we sample. set to a space " " to disable')
+cmd:option('-primetext',"15+234=",'used as a prompt to "seed" the state of the LSTM using a given sequence, before we sample. set to a space " " to disable')
 cmd:option('-length',200,'number of characters to sample')
 cmd:text()
 
@@ -24,7 +24,9 @@ opt = cmd:parse(arg)
 -- preparation and loading
 torch.manualSeed(opt.seed)
 
-local vocab = torch.load(opt.vocabfile)
+local vocab = {['1']=1, ['2']=2, ['3']=3, ['4']=4, ['5']=5, 
+        ['6']=6, ['7']=7, ['8']=8, ['9']=9, ['0']=10, ['+']=11, 
+        ['=']=12, ['.']=13, ['-']=14}
 local ivocab = {}
 for c,i in pairs(vocab) do ivocab[i] = c end
 
@@ -79,6 +81,10 @@ for i=1, opt.length do
 
     --print('OUTPUT:', ivocab[prev_char[1]])
     io.write(ivocab[prev_char[1]])
+
+    if prev_char[1] == 13 then
+        break
+    end
 end
 io.write('\n') io.flush()
 

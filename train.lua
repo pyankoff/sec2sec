@@ -2,7 +2,7 @@ require 'torch'
 require 'nn'
 require 'nngraph'
 require 'optim'
-local CharLMMinibatchLoader = require 'data.CharLMMinibatchLoader'
+local sec2secLoader = require 'data.sec2secLoader'
 local LSTM = require 'LSTM'             -- LSTM timestep and utilities
 require 'Embedding'                     -- class name is Embedding (not namespaced)
 local model_utils=require 'model_utils'
@@ -15,9 +15,10 @@ cmd:text()
 cmd:text('Options')
 cmd:option('-vocabfile','vocabfile.t7','filename of the string->int table')
 cmd:option('-datafile','datafile.t7','filename of the serialized torch ByteTensor to load')
-cmd:option('-batch_size',16,'number of sequences to train on in parallel')
+cmd:option('-batch_size',32,'number of sequences to train on in parallel')
 cmd:option('-seq_length',16,'number of timesteps to unroll to')
-cmd:option('-rnn_size',256,'size of LSTM internal state')
+cmd:option('-nbatches',1000,'number of batches to generate')
+cmd:option('-rnn_size',32,'size of LSTM internal state')
 cmd:option('-max_epochs',1,'number of full passes through the training data')
 cmd:option('-savefile','model_autosave','filename to autosave the model (protos) to, appended with the,param,string.t7')
 cmd:option('-save_every',100,'save every 100 steps, overwriting the existing file')
@@ -34,8 +35,7 @@ opt.savefile = cmd:string(opt.savefile, opt,
     {save_every=true, print_every=true, savefile=true, vocabfile=true, datafile=true})
     .. '.t7'
 
-local loader = CharLMMinibatchLoader.create(
-        opt.datafile, opt.vocabfile, opt.batch_size, opt.seq_length)
+local loader = sec2secLoader.create(opt.nbatches, opt.batch_size, opt.seq_length)
 local vocab_size = loader.vocab_size  -- the number of distinct characters
 
 -- define model prototypes for ONE timestep, then clone them
