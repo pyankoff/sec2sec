@@ -23,10 +23,12 @@ function generate_sums.generate()
       y[i] = 14
   end
 
-  for i=1,#outstr do
+  for i=1,#outstr-1 do
       x[#instr+i] = vocab_mapping[outstr:sub(i,i)]
-      y[#instr+i] = vocab_mapping[outstr:sub(i,i)]
+      y[#instr+i-1] = vocab_mapping[outstr:sub(i,i)]
   end
+
+  y[#instr+#outstr-1] = vocab_mapping[outstr:sub(#outstr,#outstr)]
 
   return {x, y, orig}
 end
