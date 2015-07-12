@@ -7,9 +7,9 @@ vocab_mapping = {['1']=1, ['2']=2, ['3']=3, ['4']=4, ['5']=5,
         ['=']=12, ['.']=13, ['-']=14, ['@']=15}
 
 function generate_sums.generate()
-  number_size = 3
-  a = torch.random(10^number_size)
-  b = torch.random(10^number_size)
+  number_size = 1
+  a = torch.random(10^number_size)-1
+  b = torch.random(10^number_size)-1
 
   instr = "@"..tostring(a) .. '+' .. tostring(b) .. '='
   outstr = tostring(a+b) .. '.'

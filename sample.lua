@@ -14,7 +14,7 @@ cmd:option('-vocabfile','vocabfile.t7','filename of the string->int table')
 cmd:option('-model','model_autosave.t7','contains just the protos table, and nothing else')
 cmd:option('-seed',123,'random number generator\'s seed')
 cmd:option('-sample',false,'false to use max at each timestep, true to sample at each timestep')
-cmd:option('-primetext',"@15+234=",'used as a prompt to "seed" the state of the LSTM using a given sequence, before we sample. set to a space " " to disable')
+cmd:option('-primetext',"@1+4=",'used as a prompt to "seed" the state of the LSTM using a given sequence, before we sample. set to a space " " to disable')
 cmd:option('-length',200,'number of characters to sample')
 cmd:text()
 
@@ -41,8 +41,11 @@ opt.rnn_size = protos.embed.weight:size(2)
 --protos.criterion = nn.ClassNLLCriterion()
 
 -- LSTM initial state, note that we're using minibatches OF SIZE ONE here
-local prev_c = torch.zeros(1, opt.rnn_size)
-local prev_h = prev_c:clone()
+local prev1_c = torch.zeros(1, opt.rnn_size)
+local prev1_h = prev1_c:clone()
+
+local prev2_c = prev1_c:clone()
+local prev2_h = prev1_c:clone()
 
 local seed_text = opt.primetext
 local prev_char
@@ -52,22 +55,21 @@ for c in seed_text:gmatch'.' do
     prev_char = torch.Tensor{vocab[c]}
 
     local embedding = protos.embed:forward(prev_char)
-    local next_c, next_h = unpack(protos.lstm:forward{embedding, prev_c, prev_h})
 
-    prev_c:copy(next_c) -- TODO: this shouldn't be needed... check if we can just use an assignment?
-    prev_h:copy(next_h)
+    lstm1_c, lstm1_h = unpack(protos.lstm1:forward{embedding, prev1_c, prev1_h})
+    lstm2_c, lstm2_h = unpack(protos.lstm2:forward{lstm1_h, prev2_c, prev2_h})
+
+    prev1_c:copy(lstm1_c) -- TODO: this shouldn't be needed... check if we can just use an assignment?
+    prev1_h:copy(lstm1_h)
+    prev2_c:copy(lstm2_c) -- TODO: this shouldn't be needed... check if we can just use an assignment?
+    prev2_h:copy(lstm2_h)
 end
 
 -- now start sampling/argmaxing
 for i=1, opt.length do
-    -- embedding and LSTM 
-    local embedding = protos.embed:forward(prev_char)
-    local next_c, next_h = unpack(protos.lstm:forward{embedding, prev_c, prev_h})
-    prev_c:copy(next_c)
-    prev_h:copy(next_h)
     
     -- softmax from previous timestep
-    local log_probs = protos.softmax:forward(next_h)
+    local log_probs = protos.softmax:forward(lstm2_h)
 
     if not opt.sample then
         -- use argmax
@@ -78,6 +80,15 @@ for i=1, opt.length do
         local probs = torch.exp(log_probs):squeeze()
         prev_char = torch.multinomial(probs, 1):resize(1)
     end
+
+    -- embedding and LSTM 
+    local embedding = protos.embed:forward(prev_char)
+    lstm1_c, lstm1_h = unpack(protos.lstm1:forward{embedding, prev1_c, prev1_h})
+    lstm2_c, lstm2_h = unpack(protos.lstm2:forward{lstm1_h, prev2_c, prev2_h})
+    prev1_c:copy(lstm1_c) -- TODO: this shouldn't be needed... check if we can just use an assignment?
+    prev1_h:copy(lstm1_h)
+    prev2_c:copy(lstm2_c) -- TODO: this shouldn't be needed... check if we can just use an assignment?
+    prev2_h:copy(lstm2_h)
 
     --print('OUTPUT:', ivocab[prev_char[1]])
     io.write(ivocab[prev_char[1]])
