@@ -15,7 +15,7 @@ cmd:text()
 cmd:text('Options')
 cmd:option('-model','','contains just the protos table, and nothing else')
 cmd:option('-batch_size',1,'number of sequences to train on in parallel')
-cmd:option('-seq_length',50,'number of timesteps to unroll to')
+cmd:option('-seq_length',30,'number of timesteps to unroll to')
 cmd:option('-nbatches',100000,'number of batches to generate')
 cmd:option('-rnn_size',400,'size of LSTM internal state')
 cmd:option('-max_epochs',1,'number of full passes through the training data')
@@ -169,7 +169,7 @@ end
 
 -- optimization stuff
 local losses = {}
-local optim_state = {learningRate = 1e-1}
+local optim_state = {learningRate = 1e-2}
 local iterations = opt.max_epochs * loader.nbatches
 for i = 1, iterations do
     local _, loss = optim.adagrad(feval, params, optim_state)
