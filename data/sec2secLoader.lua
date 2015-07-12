@@ -15,7 +15,7 @@ function sec2secLoader.create(nbatches, batch_size, seq_length)
     print('generating data...')
     self.vocab_mapping = {['1']=1, ['2']=2, ['3']=3, ['4']=4, ['5']=5, 
         ['6']=6, ['7']=7, ['8']=8, ['9']=9, ['0']=10, ['+']=11, 
-        ['=']=12, ['.']=13, ['-']=14}
+        ['=']=12, ['.']=13, ['-']=14, ['@']=15}
 
     -- count vocab
     self.vocab_size = 0

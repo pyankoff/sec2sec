@@ -13,9 +13,10 @@ cmd:text()
 cmd:text('Training a simple character-level LSTM language model')
 cmd:text()
 cmd:text('Options')
-cmd:option('-batch_size',1000,'number of sequences to train on in parallel')
+cmd:option('-model','','contains just the protos table, and nothing else')
+cmd:option('-batch_size',1,'number of sequences to train on in parallel')
 cmd:option('-seq_length',30,'number of timesteps to unroll to')
-cmd:option('-nbatches',1000,'number of batches to generate')
+cmd:option('-nbatches',10000,'number of batches to generate')
 cmd:option('-rnn_size',400,'size of LSTM internal state')
 cmd:option('-max_epochs',1,'number of full passes through the training data')
 cmd:option('-savefile','model_autosave','filename to autosave the model (protos) to, appended with the,param,string.t7')
@@ -38,12 +39,16 @@ local vocab_size = loader.vocab_size  -- the number of distinct characters
 
 -- define model prototypes for ONE timestep, then clone them
 --
-local protos = {}
-protos.embed = Embedding(vocab_size, opt.rnn_size)
--- lstm timestep's input: {x, prev_c, prev_h}, output: {next_c, next_h}
-protos.lstm = LSTM.lstm(opt)
-protos.softmax = nn.Sequential():add(nn.Linear(opt.rnn_size, vocab_size)):add(nn.LogSoftMax())
-protos.criterion = nn.ClassNLLCriterion()
+if opt.model == '' then
+    local protos = {}
+    protos.embed = Embedding(vocab_size, opt.rnn_size)
+    -- lstm timestep's input: {x, prev_c, prev_h}, output: {next_c, next_h}
+    protos.lstm = LSTM.lstm(opt)
+    protos.softmax = nn.Sequential():add(nn.Linear(opt.rnn_size, vocab_size)):add(nn.LogSoftMax())
+    protos.criterion = nn.ClassNLLCriterion()
+else
+    local protos = torch.load(opt.model)
+end
 
 -- put the above things into one flattened parameters tensor
 local params, grad_params = model_utils.combine_all_parameters(protos.embed, protos.lstm, protos.softmax)
