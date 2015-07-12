@@ -15,8 +15,8 @@ cmd:text()
 cmd:text('Options')
 cmd:option('-model','','contains just the protos table, and nothing else')
 cmd:option('-batch_size',1,'number of sequences to train on in parallel')
-cmd:option('-seq_length',30,'number of timesteps to unroll to')
-cmd:option('-nbatches',10000,'number of batches to generate')
+cmd:option('-seq_length',20,'number of timesteps to unroll to')
+cmd:option('-nbatches',100000,'number of batches to generate')
 cmd:option('-rnn_size',400,'size of LSTM internal state')
 cmd:option('-max_epochs',1,'number of full passes through the training data')
 cmd:option('-savefile','model_autosave','filename to autosave the model (protos) to, appended with the,param,string.t7')
@@ -43,7 +43,8 @@ local protos = {}
 if opt.model == '' then
     protos.embed = Embedding(vocab_size, opt.rnn_size)
     -- lstm timestep's input: {x, prev_c, prev_h}, output: {next_c, next_h}
-    protos.lstm = LSTM.lstm(opt)
+    protos.lstm1 = LSTM.lstm(opt)
+    protos.lstm2 = LSTM.lstm(opt)
     protos.softmax = nn.Sequential():add(nn.Linear(opt.rnn_size, vocab_size)):add(nn.LogSoftMax())
     protos.criterion = nn.ClassNLLCriterion()
 else
@@ -51,7 +52,8 @@ else
 end
 
 -- put the above things into one flattened parameters tensor
-local params, grad_params = model_utils.combine_all_parameters(protos.embed, protos.lstm, protos.softmax)
+local params, grad_params = model_utils.combine_all_parameters(protos.embed, 
+                    protos.lstm1, protos.lstm2, protos.softmax)
 params:uniform(-0.08, 0.08)
 
 -- make a bunch of clones, AFTER flattening, as that reallocates memory
@@ -62,12 +64,18 @@ for name,proto in pairs(protos) do
 end
 
 -- LSTM initial state (zero initially, but final state gets sent to initial state when we do BPTT)
-local initstate_c = torch.zeros(opt.batch_size, opt.rnn_size)
-local initstate_h = initstate_c:clone()
+local initstate1_c = torch.zeros(opt.batch_size, opt.rnn_size)
+local initstate1_h = initstate1_c:clone()
+
+local initstate2_c = initstate1_c:clone()
+local initstate2_h = initstate1_c:clone()
 
 -- LSTM final state's backward message (dloss/dfinalstate) is 0, since it doesn't influence predictions
-local dfinalstate_c = initstate_c:clone()
-local dfinalstate_h = initstate_c:clone()
+local dfinalstate1_c = initstate1_c:clone()
+local dfinalstate1_h = initstate1_c:clone()
+
+local dfinalstate2_c = initstate1_c:clone()
+local dfinalstate2_h = initstate1_c:clone()
 
 -- do fwd/bwd and return loss, grad_params
 function feval(params_)
@@ -81,8 +89,10 @@ function feval(params_)
 
     ------------------- forward pass -------------------
     local embeddings = {}            -- input embeddings
-    local lstm_c = {[0]=initstate_c} -- internal cell states of LSTM
-    local lstm_h = {[0]=initstate_h} -- output values of LSTM
+    local lstm1_c = {[0]=initstate1_c} -- internal cell states of LSTM
+    local lstm1_h = {[0]=initstate1_h} -- output values of LSTM
+    local lstm2_c = {[0]=initstate2_c} -- internal cell states of LSTM
+    local lstm2_h = {[0]=initstate2_h} -- output values of LSTM
     local predictions = {}           -- softmax outputs
     local loss = 0
 
@@ -92,17 +102,21 @@ function feval(params_)
         -- we're feeding the *correct* things in here, alternatively
         -- we could sample from the previous timestep and embed that, but that's
         -- more commonly done for LSTM encoder-decoder models
-        lstm_c[t], lstm_h[t] = unpack(clones.lstm[t]:forward{embeddings[t], lstm_c[t-1], lstm_h[t-1]})
+        lstm1_c[t], lstm1_h[t] = unpack(clones.lstm1[t]:forward{embeddings[t], lstm1_c[t-1], lstm1_h[t-1]})
+        lstm2_c[t], lstm2_h[t] = unpack(clones.lstm2[t]:forward{lstm1_h[t], lstm2_c[t-1], lstm2_h[t-1]})
 
-        predictions[t] = clones.softmax[t]:forward(lstm_h[t])
+        predictions[t] = clones.softmax[t]:forward(lstm2_h[t])
         loss = loss + clones.criterion[t]:forward(predictions[t], y[{{}, t}])
     end
 
     ------------------ backward pass -------------------
     -- complete reverse order of the above
     local dembeddings = {}                              -- d loss / d input embeddings
-    local dlstm_c = {[opt.seq_length]=dfinalstate_c}    -- internal cell states of LSTM
-    local dlstm_h = {}                                  -- output values of LSTM
+    local dlstm1_c = {[opt.seq_length]=dfinalstate1_c}  -- internal cell states of LSTM
+    local dlstm1_h = {}                                 -- output values of LSTM
+    local dlstm2_c = {[opt.seq_length]=dfinalstate2_c}
+    local dlstm2_h = {} 
+
     for t=opt.seq_length,1,-1 do
         -- backprop through loss, and softmax/linear
         local doutput_t = clones.criterion[t]:backward(predictions[t], y[{{}, t}])
@@ -111,16 +125,28 @@ function feval(params_)
         --   2. h_t is used twice, for the softmax and for the next step. To obey the
         --      multivariate chain rule, we add them.
         if t == opt.seq_length then
-            assert(dlstm_h[t] == nil)
-            dlstm_h[t] = clones.softmax[t]:backward(lstm_h[t], doutput_t)
+            assert(dlstm2_h[t] == nil)
+            dlstm2_h[t] = clones.softmax[t]:backward(lstm2_h[t], doutput_t)
+
+            dlstm1_h[t], dlstm2_c[t-1], dlstm2_h[t-1] = unpack(clones.lstm2[t]:backward(
+                {lstm1_h[t], lstm2_c[t-1], lstm2_h[t-1]},
+                {dlstm2_c[t], dlstm2_h[t]}
+            ))
         else
-            dlstm_h[t]:add(clones.softmax[t]:backward(lstm_h[t], doutput_t))
+            dlstm2_h[t]:add(clones.softmax[t]:backward(lstm2_h[t], doutput_t))
+
+            dlstm1ht, dlstm2_c[t-1], dlstm2_h[t-1] = unpack(clones.lstm2[t]:backward(
+                {lstm1_h[t], lstm2_c[t-1], lstm2_h[t-1]},
+                {dlstm2_c[t], dlstm2_h[t]}
+            ))
+
+            dlstm1_h[t]:add(dlstm1ht)
         end
 
         -- backprop through LSTM timestep
-        dembeddings[t], dlstm_c[t-1], dlstm_h[t-1] = unpack(clones.lstm[t]:backward(
-            {embeddings[t], lstm_c[t-1], lstm_h[t-1]},
-            {dlstm_c[t], dlstm_h[t]}
+        dembeddings[t], dlstm1_c[t-1], dlstm1_h[t-1] = unpack(clones.lstm1[t]:backward(
+            {embeddings[t], lstm1_c[t-1], lstm1_h[t-1]},
+            {dlstm1_c[t], dlstm1_h[t]}
         ))
 
         -- backprop through embeddings
@@ -129,8 +155,11 @@ function feval(params_)
 
     ------------------------ misc ----------------------
     -- transfer final state to initial state (BPTT)
-    initstate_c:copy(lstm_c[#lstm_c])
-    initstate_h:copy(lstm_h[#lstm_h])
+    initstate1_c:copy(lstm1_c[#lstm2_c])
+    initstate1_h:copy(lstm1_h[#lstm2_h])
+
+    initstate2_c:copy(lstm2_c[#lstm2_c])
+    initstate2_h:copy(lstm2_h[#lstm2_h])
 
     -- clip gradient element-wise
     grad_params:clamp(-5, 5)
