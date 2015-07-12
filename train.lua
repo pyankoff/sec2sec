@@ -31,7 +31,7 @@ local opt = cmd:parse(arg)
 -- preparation stuff:
 torch.manualSeed(opt.seed)
 opt.savefile = cmd:string(opt.savefile, opt,
-    {save_every=true, print_every=true, savefile=true, vocabfile=true, datafile=true})
+    {model=true, save_every=true, print_every=true, savefile=true, vocabfile=true, datafile=true})
     .. '.t7'
 
 local loader = sec2secLoader.create(opt.nbatches, opt.batch_size, opt.seq_length)
@@ -39,15 +39,15 @@ local vocab_size = loader.vocab_size  -- the number of distinct characters
 
 -- define model prototypes for ONE timestep, then clone them
 --
+local protos = {}
 if opt.model == '' then
-    local protos = {}
     protos.embed = Embedding(vocab_size, opt.rnn_size)
     -- lstm timestep's input: {x, prev_c, prev_h}, output: {next_c, next_h}
     protos.lstm = LSTM.lstm(opt)
     protos.softmax = nn.Sequential():add(nn.Linear(opt.rnn_size, vocab_size)):add(nn.LogSoftMax())
     protos.criterion = nn.ClassNLLCriterion()
 else
-    local protos = torch.load(opt.model)
+    protos = torch.load(opt.model)
 end
 
 -- put the above things into one flattened parameters tensor
